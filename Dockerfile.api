@@ -21,28 +21,37 @@ FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
-# Create a non-root user (principle of least privilege)
-RUN addgroup --system ragops && adduser --system --ingroup ragops ragops
+# Create a non-root user WITH a real home directory so HuggingFace
+# can write its model cache. The default --system user gets /nonexistent
+# as home, which causes PermissionError on first model download.
+RUN addgroup --system ragops && \
+    adduser --system --ingroup ragops --home /home/ragops ragops && \
+    mkdir -p /home/ragops/.cache && \
+    chown -R ragops:ragops /home/ragops
 
-# Install wheels built in stage 1
+# Install wheels built in stage 1 (still as root so pip has write access)
 COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/*.whl && \
     rm -rf /wheels
 
-# Copy application source
+# Copy application source and fix ownership
 COPY app/        ./app/
 COPY ingestion/  ./ingestion/
 COPY evaluation/ ./evaluation/
+RUN chown -R ragops:ragops /app
+
+# Switch to non-root user before downloading the model so the cache
+# lands in /home/ragops/.cache/huggingface (writable by ragops)
+USER ragops
+ENV HOME=/home/ragops
+ENV HF_HOME=/home/ragops/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/home/ragops/.cache/huggingface
 
 # Pre-download the embedding model so the container starts fast
-# (avoids a 90 MB download on first request in production)
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-
-USER ragops
 
 EXPOSE 8000
 
-# Gunicorn with UvicornWorker for production; swap to uvicorn directly for dev
 CMD ["uvicorn", "app.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \

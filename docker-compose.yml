@@ -1,16 +1,8 @@
 # RAG-Ops Observability Agent — Docker Compose
-# =============================================
-# Starts: FastAPI backend, Oracle 23ai (Free edition), and optionally a dev React frontend.
-# For production K8s migration, each service maps 1:1 to a Deployment.
-
 version: "3.9"
 
 services:
 
-  # ---------------------------------------------------------------------------
-  # Oracle 23ai Free (container_registry.oracle.com/database/free:latest)
-  # In production: replace with RDS Custom for Oracle or Oracle Autonomous DB.
-  # ---------------------------------------------------------------------------
   oracle:
     image: container-registry.oracle.com/database/free:latest
     container_name: ragops_oracle
@@ -19,20 +11,17 @@ services:
       ORACLE_CHARACTERSET: AL32UTF8
     ports:
       - "1521:1521"
-      - "5500:5500"   # EM Express
+      - "5500:5500"
     volumes:
       - oracle_data:/opt/oracle/oradata
-      - ./schema:/docker-entrypoint-initdb.d:ro   # auto-run SQL on first start
+      - ./schema:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "sqlplus", "-L", "sys/${ORACLE_PASSWORD}@//localhost/FREE as sysdba", "@/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 120s    # Oracle takes ~2 min to initialise
+      start_period: 120s
 
-  # ---------------------------------------------------------------------------
-  # FastAPI Backend
-  # ---------------------------------------------------------------------------
   api:
     build:
       context: .
@@ -42,6 +31,16 @@ services:
     environment:
       ORACLE_HOST: oracle
       ORACLE_PORT: 1521
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      ORACLE_SERVICE: ${ORACLE_SERVICE:-FREE}
+      ORACLE_USER: ${ORACLE_USER:-ragops}
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      FAITHFULNESS_THRESHOLD: ${FAITHFULNESS_THRESHOLD:-0.70}
     ports:
       - "8000:8000"
     depends_on:
@@ -51,10 +50,13 @@ services:
       - ./ingestion:/app/ingestion:ro
       - ./evaluation:/app/evaluation:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
-  # ---------------------------------------------------------------------------
-  # React Frontend (dev mode)
-  # ---------------------------------------------------------------------------
   frontend:
     build:
       context: ./frontend
@@ -65,7 +67,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   oracle_data:
