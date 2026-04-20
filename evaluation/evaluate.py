@@ -32,6 +32,10 @@ from ragas.metrics import (
     faithfulness,
 )
 
+
+os.environ["OPENAI_API_KEY"]  = os.environ["OPENROUTER_API_KEY"]
+os.environ["OPENAI_API_BASE"] = "https://openrouter.ai/api/v1"
+
 # ---------------------------------------------------------------------------
 # Faithfulness threshold — alert if below this value
 # ---------------------------------------------------------------------------

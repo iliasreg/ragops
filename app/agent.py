@@ -18,14 +18,15 @@ import asyncio
 import json
 import time
 import uuid
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncGenerator, Optional
 
 import oracledb
 from langchain.callbacks.streaming_aiter import AsyncIteratorCallbackHandler
+from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
@@ -211,10 +212,16 @@ class RagOpsAgent:
         # 5. Stream LLM response
         callback = AsyncIteratorCallbackHandler()
         llm = ChatOpenAI(
-            model=self._llm_model,
+            model=os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"),
             temperature=self._temperature,
             streaming=True,
             callbacks=[callback],
+            openai_api_key=os.environ["OPENROUTER_API_KEY"],
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "http://localhost:3000",   # required by OpenRouter
+                "X-Title": "RAG-Ops Observability Agent",  # shows up in your OR dashboard
+            },
         )
 
         full_answer_parts: list[str] = []
