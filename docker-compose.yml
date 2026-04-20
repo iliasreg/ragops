@@ -1,0 +1,71 @@
+# RAG-Ops Observability Agent — Docker Compose
+# =============================================
+# Starts: FastAPI backend, Oracle 23ai (Free edition), and optionally a dev React frontend.
+# For production K8s migration, each service maps 1:1 to a Deployment.
+
+version: "3.9"
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Oracle 23ai Free (container_registry.oracle.com/database/free:latest)
+  # In production: replace with RDS Custom for Oracle or Oracle Autonomous DB.
+  # ---------------------------------------------------------------------------
+  oracle:
+    image: container-registry.oracle.com/database/free:latest
+    container_name: ragops_oracle
+    environment:
+      ORACLE_PWD: ${ORACLE_PASSWORD}
+      ORACLE_CHARACTERSET: AL32UTF8
+    ports:
+      - "1521:1521"
+      - "5500:5500"   # EM Express
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+      - ./schema:/docker-entrypoint-initdb.d:ro   # auto-run SQL on first start
+    healthcheck:
+      test: ["CMD", "sqlplus", "-L", "sys/${ORACLE_PASSWORD}@//localhost/FREE as sysdba", "@/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s    # Oracle takes ~2 min to initialise
+
+  # ---------------------------------------------------------------------------
+  # FastAPI Backend
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: ragops_api
+    env_file: .env
+    environment:
+      ORACLE_HOST: oracle
+      ORACLE_PORT: 1521
+    ports:
+      - "8000:8000"
+    depends_on:
+      oracle:
+        condition: service_healthy
+    volumes:
+      - ./ingestion:/app/ingestion:ro
+      - ./evaluation:/app/evaluation:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ---------------------------------------------------------------------------
+  # React Frontend (dev mode)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: ragops_frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  oracle_data:
