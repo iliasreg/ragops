@@ -488,7 +488,6 @@ class OracleWriter:
     """
 
     def __init__(self) -> None:
-        oracledb.init_oracle_client()  # thin mode: no-op; remove for thick mode
         dsn = oracledb.makedsn(
             _cfg.oracle_host, _cfg.oracle_port, service_name=_cfg.oracle_service
         )

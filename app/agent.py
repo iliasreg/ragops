@@ -212,15 +212,14 @@ class RagOpsAgent:
         # 5. Stream LLM response
         callback = AsyncIteratorCallbackHandler()
         llm = ChatOpenAI(
-            model=os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"),
+            model=os.environ.get("OPENROUTER_MODEL", "llama-3.3-70b-versatile"),
             temperature=self._temperature,
             streaming=True,
             callbacks=[callback],
             openai_api_key=os.environ["OPENROUTER_API_KEY"],
-            openai_api_base="https://openrouter.ai/api/v1",
+            openai_api_base="https://api.groq.com/openai/v1",
             default_headers={
-                "HTTP-Referer": "http://localhost:3000",   # required by OpenRouter
-                "X-Title": "RAG-Ops Observability Agent",  # shows up in your OR dashboard
+                "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}",
             },
         )
 
