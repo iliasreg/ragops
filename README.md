@@ -1,5 +1,10 @@
 # RAG-Ops
 
+[![CI](https://github.com/iliasreg/ragops/actions/workflows/ci.yml/badge.svg)](https://github.com/iliasreg/ragops/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![React](https://img.shields.io/badge/react-19-blue.svg)](https://react.dev/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 RAG-based diagnostic agent that autonomously analyzes AWS CloudWatch logs and
 returns grounded, evaluated fixes for production errors.
 
@@ -69,15 +74,6 @@ cd frontend && npm install --legacy-peer-deps && cd ..
 the schema, then boots the FastAPI app on `:8000` and the React frontend on
 `:3000`.
 
-## Development
+## License
 
-Install the pre-commit hooks to run Ruff lint/format and the base hygiene
-hooks on every commit:
-
-```bash
-pip install pre-commit
-pre-commit install
-```
-
-The CI workflow (`.github/workflows/ci.yml`) runs these same checks plus an
-app-import smoke test and a frontend production build on every push and PR.
+[MIT](LICENSE).

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import oracledb
 from datasets import Dataset
@@ -30,7 +30,6 @@ from ragas.metrics import (
     context_precision,
     faithfulness,
 )
-
 
 os.environ["OPENAI_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
 os.environ["OPENAI_API_BASE"] = "https://api.groq.com/openai/v1"
@@ -57,7 +56,7 @@ def load_evaluation_samples(
     Returns a list of dicts with keys required by RAGAS:
         question, answer, contexts, ground_truth (optional)
     """
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=lookback_hours)
+    cutoff = datetime.now(tz=UTC) - timedelta(hours=lookback_hours)
 
     sql = """
         SELECT query_id, query_text, generated_answer, retrieved_chunks
