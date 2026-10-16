@@ -14,10 +14,11 @@ from pydantic import BaseModel, Field, model_validator
 # Ingestion
 # ---------------------------------------------------------------------------
 
+
 class IngestRequest(BaseModel):
     log_group: str = Field(..., examples=["/aws/lambda/my-service"])
     service_name: str = Field(..., examples=["my-service"])
-    lookback_hours: int = Field(6, ge=1, le=168)        # max 1 week
+    lookback_hours: int = Field(6, ge=1, le=168)  # max 1 week
     filter_pattern: str = Field("", examples=["?ERROR ?Exception"])
 
 
@@ -30,6 +31,7 @@ class IngestResponse(BaseModel):
 # Query
 # ---------------------------------------------------------------------------
 
+
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=5, max_length=2000)
     start_ts: Optional[datetime] = Field(
@@ -40,9 +42,7 @@ class QueryRequest(BaseModel):
         default=None,
         description="Inclusive UTC end. Defaults to now.",
     )
-    log_level_filter: Optional[str] = Field(
-        None, examples=["ERROR", "WARNING"]
-    )
+    log_level_filter: Optional[str] = Field(None, examples=["ERROR", "WARNING"])
     service_filter: Optional[str] = Field(None, examples=["payment-service"])
     top_k: int = Field(8, ge=1, le=20)
 
@@ -63,7 +63,7 @@ class SourceChunk(BaseModel):
     log_level: str
     request_id: str
     chunk_text: str
-    score: float                # cosine distance (lower = more similar)
+    score: float  # cosine distance (lower = more similar)
     is_complete: int
     completeness_note: str
 
@@ -91,11 +91,12 @@ class QuerySummary(BaseModel):
 # Metrics
 # ---------------------------------------------------------------------------
 
+
 class MetricsResponse(BaseModel):
     period_hours: int = 24
     total_queries: int
     mean_faithfulness: Optional[float]
     mean_answer_relevancy: Optional[float]
-    low_faithfulness_count: int         # queries below 0.70 threshold
+    low_faithfulness_count: int  # queries below 0.70 threshold
     incomplete_context_count: int
     self_correction_count: int
