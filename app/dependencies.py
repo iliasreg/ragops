@@ -63,6 +63,7 @@ lifespan_state = _LifespanState()
 # FastAPI dependency functions
 # ---------------------------------------------------------------------------
 
+
 async def get_db_pool() -> oracledb.AsyncConnectionPool:
     assert lifespan_state.pool, "DB pool not initialised"
     return lifespan_state.pool

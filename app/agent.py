@@ -17,10 +17,9 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-import uuid
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional
 
 import oracledb
 from langchain.callbacks.streaming_aiter import AsyncIteratorCallbackHandler
@@ -109,6 +108,7 @@ _BROADER_SQL = """
 # Agent
 # ---------------------------------------------------------------------------
 
+
 class RagOpsAgent:
     """
     Orchestrates retrieval, self-correction, LLM generation, and evaluation.
@@ -177,7 +177,7 @@ class RagOpsAgent:
             )
             broader = await self._broader_search(
                 query_vec=query_vec,
-                start_ts=start_ts - timedelta(hours=2),   # widen time window
+                start_ts=start_ts - timedelta(hours=2),  # widen time window
                 end_ts=end_ts,
                 top_k=top_k,
             )
@@ -192,7 +192,9 @@ class RagOpsAgent:
                 "All initial chunks were incomplete. Broadened time window by 2 h "
                 "and merged complete chunks from a second search pass."
             )
-            logger.info("Self-correction complete", query_id=query_id, total_chunks=len(chunks))
+            logger.info(
+                "Self-correction complete", query_id=query_id, total_chunks=len(chunks)
+            )
 
         # 4. Build context string
         context_parts: list[str] = []
@@ -226,10 +228,12 @@ class RagOpsAgent:
         full_answer_parts: list[str] = []
 
         async def _run_llm() -> None:
-            prompt = ChatPromptTemplate.from_messages([
-                SystemMessage(content=_SYSTEM_PROMPT.format(context=context)),
-                HumanMessage(content=question),
-            ])
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    SystemMessage(content=_SYSTEM_PROMPT.format(context=context)),
+                    HumanMessage(content=question),
+                ]
+            )
             chain = prompt | llm
             await chain.ainvoke({})
 
@@ -319,8 +323,20 @@ class RagOpsAgent:
         if not row:
             return None
 
-        (qid, question, answer, chunks_json, faith, rel, prec,
-         incomplete, correction, note, created_at, latency) = row
+        (
+            qid,
+            question,
+            answer,
+            chunks_json,
+            faith,
+            rel,
+            prec,
+            incomplete,
+            correction,
+            note,
+            created_at,
+            latency,
+        ) = row
 
         chunks = json.loads(chunks_json or "[]")
         return QuerySummary(
@@ -373,9 +389,7 @@ class RagOpsAgent:
     # ------------------------------------------------------------------
 
     def _embed(self, text: str) -> list[float]:
-        return self._embedder.encode(
-            [text], normalize_embeddings=True
-        )[0].tolist()
+        return self._embedder.encode([text], normalize_embeddings=True)[0].tolist()
 
     async def _hybrid_search(
         self,
@@ -389,12 +403,12 @@ class RagOpsAgent:
         return await self._run_search(
             sql=_HYBRID_SQL,
             params={
-                "query_vec":        json.dumps(query_vec),
-                "start_ts":         start_ts,
-                "end_ts":           end_ts,
+                "query_vec": json.dumps(query_vec),
+                "start_ts": start_ts,
+                "end_ts": end_ts,
                 "log_level_filter": log_level_filter,
-                "service_filter":   service_filter,
-                "top_k":            top_k,
+                "service_filter": service_filter,
+                "top_k": top_k,
             },
         )
 
@@ -409,9 +423,9 @@ class RagOpsAgent:
             sql=_BROADER_SQL,
             params={
                 "query_vec": json.dumps(query_vec),
-                "start_ts":  start_ts,
-                "end_ts":    end_ts,
-                "top_k":     top_k,
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+                "top_k": top_k,
             },
         )
 
@@ -426,16 +440,16 @@ class RagOpsAgent:
     @staticmethod
     def _row_to_source(row: dict) -> dict:
         return {
-            "chunk_id":          row["chunk_id"],
-            "service_name":      row.get("service_name", ""),
-            "log_timestamp":     row["log_timestamp"].isoformat()
-                                 if hasattr(row["log_timestamp"], "isoformat")
-                                 else str(row["log_timestamp"]),
-            "log_level":         row.get("log_level", ""),
-            "request_id":        row.get("request_id", ""),
-            "chunk_text":        row["chunk_text"],
-            "score":             float(row["score"]),
-            "is_complete":       int(row.get("is_complete", 1)),
+            "chunk_id": row["chunk_id"],
+            "service_name": row.get("service_name", ""),
+            "log_timestamp": row["log_timestamp"].isoformat()
+            if hasattr(row["log_timestamp"], "isoformat")
+            else str(row["log_timestamp"]),
+            "log_level": row.get("log_level", ""),
+            "request_id": row.get("request_id", ""),
+            "chunk_text": row["chunk_text"],
+            "score": float(row["score"]),
+            "is_complete": int(row.get("is_complete", 1)),
             "completeness_note": row.get("completeness_note", "") or "",
         }
 
@@ -464,16 +478,19 @@ class RagOpsAgent:
         """
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(sql, {
-                    "qid":        query_id,
-                    "question":   question,
-                    "answer":     answer,
-                    "chunks":     chunks_json,
-                    "incomplete": int(had_incomplete),
-                    "correction": int(self_correction_applied),
-                    "note":       self_correction_note or None,
-                    "latency":    latency_ms,
-                })
+                await cur.execute(
+                    sql,
+                    {
+                        "qid": query_id,
+                        "question": question,
+                        "answer": answer,
+                        "chunks": chunks_json,
+                        "incomplete": int(had_incomplete),
+                        "correction": int(self_correction_applied),
+                        "note": self_correction_note or None,
+                        "latency": latency_ms,
+                    },
+                )
                 await conn.commit()
 
     async def _evaluate_and_update(
@@ -496,11 +513,15 @@ class RagOpsAgent:
             if not contexts or not answer:
                 return
 
-            dataset = Dataset.from_list([{
-                "question": question,
-                "answer":   answer,
-                "contexts": contexts,
-            }])
+            dataset = Dataset.from_list(
+                [
+                    {
+                        "question": question,
+                        "answer": answer,
+                        "contexts": contexts,
+                    }
+                ]
+            )
 
             loop = asyncio.get_event_loop()
             results = await loop.run_in_executor(
@@ -512,8 +533,16 @@ class RagOpsAgent:
             )
             df = results.to_pandas()
             faith = float(df["faithfulness"].iloc[0])
-            rel   = float(df.get("answer_relevancy", df).iloc[0]) if "answer_relevancy" in df else None
-            prec  = float(df.get("context_precision", df).iloc[0]) if "context_precision" in df else None
+            rel = (
+                float(df.get("answer_relevancy", df).iloc[0])
+                if "answer_relevancy" in df
+                else None
+            )
+            prec = (
+                float(df.get("context_precision", df).iloc[0])
+                if "context_precision" in df
+                else None
+            )
 
             if faith < 0.70:
                 logger.warning(
@@ -532,12 +561,22 @@ class RagOpsAgent:
             """
             async with self._pool.acquire() as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute(update_sql, {
-                        "faith": faith, "rel": rel, "prec": prec, "qid": query_id,
-                    })
+                    await cur.execute(
+                        update_sql,
+                        {
+                            "faith": faith,
+                            "rel": rel,
+                            "prec": prec,
+                            "qid": query_id,
+                        },
+                    )
                     await conn.commit()
 
-            logger.info("RAGAS evaluation complete", query_id=query_id, faithfulness=round(faith, 4))
+            logger.info(
+                "RAGAS evaluation complete",
+                query_id=query_id,
+                faithfulness=round(faith, 4),
+            )
 
         except Exception:
             logger.exception("RAGAS evaluation failed (non-fatal)", query_id=query_id)

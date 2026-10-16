@@ -17,17 +17,16 @@ import asyncio
 import json
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from typing import AsyncGenerator, Optional
+from datetime import datetime, timezone
+from typing import AsyncGenerator
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from pydantic import BaseModel, Field
 
 from app.agent import RagOpsAgent
-from app.dependencies import get_agent, get_db_pool, lifespan_state
+from app.dependencies import get_agent, lifespan_state
 from app.schemas import (
     IngestRequest,
     IngestResponse,
@@ -40,6 +39,7 @@ from app.schemas import (
 # ---------------------------------------------------------------------------
 # App lifespan — initialise shared resources once at startup
 # ---------------------------------------------------------------------------
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -69,6 +69,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health", tags=["ops"])
 async def health() -> dict:
@@ -145,7 +146,7 @@ async def query(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",      # disable Nginx buffering for SSE
+            "X-Accel-Buffering": "no",  # disable Nginx buffering for SSE
             "Connection": "keep-alive",
         },
     )

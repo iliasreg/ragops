@@ -20,7 +20,6 @@ import hashlib
 import json
 import os
 import re
-import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -40,32 +39,37 @@ load_dotenv()
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class Config:
     """All configuration sourced from environment variables for 12-factor compliance."""
 
     # AWS
     aws_region: str = field(default_factory=lambda: os.environ["AWS_REGION"])
-    aws_log_group: str = field(default_factory=lambda: os.environ.get("AWS_LOG_GROUP", ""))
+    aws_log_group: str = field(
+        default_factory=lambda: os.environ.get("AWS_LOG_GROUP", "")
+    )
 
     # Oracle 23ai
     oracle_host: str = field(default_factory=lambda: os.environ["ORACLE_HOST"])
-    oracle_port: int = field(default_factory=lambda: int(os.environ.get("ORACLE_PORT", "1521")))
+    oracle_port: int = field(
+        default_factory=lambda: int(os.environ.get("ORACLE_PORT", "1521"))
+    )
     oracle_service: str = field(default_factory=lambda: os.environ["ORACLE_SERVICE"])
     oracle_user: str = field(default_factory=lambda: os.environ["ORACLE_USER"])
     oracle_password: str = field(default_factory=lambda: os.environ["ORACLE_PASSWORD"])
 
     # Embedding
-    embedding_model: str = "all-MiniLM-L6-v2"   # 384-dim, fast, good quality
+    embedding_model: str = "all-MiniLM-L6-v2"  # 384-dim, fast, good quality
     embedding_batch_size: int = 64
 
     # Chunking
-    max_chunk_tokens: int = 400                  # ~300 words; leaves room in 512-token context
-    chunk_overlap_lines: int = 2                 # lines of overlap between adjacent chunks
+    max_chunk_tokens: int = 400  # ~300 words; leaves room in 512-token context
+    chunk_overlap_lines: int = 2  # lines of overlap between adjacent chunks
 
     # CloudWatch fetch
     default_lookback_hours: int = 6
-    cw_query_limit: int = 10_000                 # max events per filter_log_events page
+    cw_query_limit: int = 10_000  # max events per filter_log_events page
 
 
 _cfg = Config()
@@ -74,6 +78,7 @@ _cfg = Config()
 # ---------------------------------------------------------------------------
 # Data Models
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class LogChunk:
@@ -90,7 +95,7 @@ class LogChunk:
     chunk_text: str
     chunk_seq: int
     chunk_token_count: int
-    is_complete: int                  # 1 = OK, 0 = agent flagged as incomplete
+    is_complete: int  # 1 = OK, 0 = agent flagged as incomplete
     completeness_note: str
     source_type: str = "cloudwatch_log"
     embedding: Optional[list[float]] = None
@@ -105,6 +110,7 @@ class LogChunk:
 # ---------------------------------------------------------------------------
 # CloudWatch Fetcher
 # ---------------------------------------------------------------------------
+
 
 class CloudWatchFetcher:
     """
@@ -149,7 +155,7 @@ class CloudWatchFetcher:
             "endTime": int(end_time.timestamp() * 1000),
             "filterPattern": filter_pattern,
             "limit": _cfg.cw_query_limit,
-            "interleaved": True,     # merge streams by timestamp
+            "interleaved": True,  # merge streams by timestamp
         }
         if log_stream_prefix:
             kwargs["logStreamNamePrefix"] = log_stream_prefix
@@ -201,9 +207,13 @@ _PATTERNS = {
 
 # Heuristics that indicate a chunk might be incomplete
 _INCOMPLETE_INDICATORS = [
-    re.compile(r"Traceback \(most recent call last\)$", re.MULTILINE),  # truncated stack
-    re.compile(r"^REPORT RequestId.*Duration:", re.MULTILINE),          # missing END before REPORT
-    re.compile(r"\.\.\.$"),                                             # ellipsis truncation
+    re.compile(
+        r"Traceback \(most recent call last\)$", re.MULTILINE
+    ),  # truncated stack
+    re.compile(
+        r"^REPORT RequestId.*Duration:", re.MULTILINE
+    ),  # missing END before REPORT
+    re.compile(r"\.\.\.$"),  # ellipsis truncation
     re.compile(r"<TRUNCATED>", re.IGNORECASE),
 ]
 
@@ -275,7 +285,9 @@ class LogChunker:
         request_id = trace_id = log_level = ""
         for msg in messages:
             if not request_id:
-                m = _PATTERNS["request_id"].search(msg) or _PATTERNS["lambda_request"].search(msg)
+                m = _PATTERNS["request_id"].search(msg) or _PATTERNS[
+                    "lambda_request"
+                ].search(msg)
                 if m:
                     request_id = m.group(1)
             if not trace_id:
@@ -287,7 +299,11 @@ class LogChunker:
                 if m:
                     # Normalise WARN → WARNING, CRITICAL → ERROR
                     raw = m.group(1).upper()
-                    log_level = {"WARN": "WARNING", "CRITICAL": "ERROR", "FATAL": "ERROR"}.get(raw, raw)
+                    log_level = {
+                        "WARN": "WARNING",
+                        "CRITICAL": "ERROR",
+                        "FATAL": "ERROR",
+                    }.get(raw, raw)
             if request_id and trace_id and log_level:
                 break
         return request_id, trace_id, log_level or "UNKNOWN"
@@ -309,7 +325,9 @@ class LogChunker:
         has_start = bool(re.search(r"^START RequestId:", text, re.MULTILINE))
         has_report = bool(re.search(r"^REPORT RequestId:", text, re.MULTILINE))
         if has_start and not has_report:
-            notes.append("Lambda START found but REPORT line is missing — trace may be truncated.")
+            notes.append(
+                "Lambda START found but REPORT line is missing — trace may be truncated."
+            )
 
         if not text.strip():
             notes.append("Chunk text is empty.")
@@ -351,8 +369,8 @@ class LogChunker:
             if current_tokens + line_tokens > _cfg.max_chunk_tokens and current:
                 raw_chunks.append(current)
                 # overlap: carry last N lines into the next chunk
-                current = current[-_cfg.chunk_overlap_lines:]
-                current_tokens = sum(self._estimate_tokens(l) for l in current)
+                current = current[-_cfg.chunk_overlap_lines :]
+                current_tokens = sum(self._estimate_tokens(line) for line in current)
             current.append(line)
             current_tokens += line_tokens
 
@@ -397,6 +415,7 @@ class LogChunker:
 # Embedder
 # ---------------------------------------------------------------------------
 
+
 class Embedder:
     """
     Wraps sentence-transformers to produce normalised 384-dim embeddings.
@@ -419,12 +438,14 @@ class Embedder:
         """
         texts = [c.chunk_text for c in chunks]
         total = len(texts)
-        logger.info(f"Embedding {total} chunks in batches of {_cfg.embedding_batch_size}")
+        logger.info(
+            f"Embedding {total} chunks in batches of {_cfg.embedding_batch_size}"
+        )
 
         all_embeddings = self._model.encode(
             texts,
             batch_size=_cfg.embedding_batch_size,
-            normalize_embeddings=True,     # unit vectors → cosine = dot product
+            normalize_embeddings=True,  # unit vectors → cosine = dot product
             show_progress_bar=total > 100,
         )
 
@@ -437,6 +458,7 @@ class Embedder:
 # ---------------------------------------------------------------------------
 # Oracle Writer
 # ---------------------------------------------------------------------------
+
 
 class OracleWriter:
     """
@@ -522,22 +544,22 @@ class OracleWriter:
                     batch = chunks[i : i + batch_size]
                     params = [
                         {
-                            "chunk_id":          c.chunk_id,
-                            "log_group_name":    c.log_group_name,
-                            "log_stream_name":   c.log_stream_name,
-                            "log_timestamp":     c.log_timestamp,
-                            "log_level":         c.log_level,
-                            "service_name":      c.service_name,
-                            "request_id":        c.request_id,
-                            "trace_id":          c.trace_id,
-                            "chunk_text":        c.chunk_text,
-                            "chunk_seq":         c.chunk_seq,
+                            "chunk_id": c.chunk_id,
+                            "log_group_name": c.log_group_name,
+                            "log_stream_name": c.log_stream_name,
+                            "log_timestamp": c.log_timestamp,
+                            "log_level": c.log_level,
+                            "service_name": c.service_name,
+                            "request_id": c.request_id,
+                            "trace_id": c.trace_id,
+                            "chunk_text": c.chunk_text,
+                            "chunk_seq": c.chunk_seq,
                             "chunk_token_count": c.chunk_token_count,
-                            "is_complete":       c.is_complete,
+                            "is_complete": c.is_complete,
                             "completeness_note": c.completeness_note,
-                            "source_type":       c.source_type,
+                            "source_type": c.source_type,
                             # Oracle TO_VECTOR() accepts a JSON array string
-                            "embedding_json":    json.dumps(c.embedding),
+                            "embedding_json": json.dumps(c.embedding),
                         }
                         for c in batch
                     ]
@@ -566,10 +588,18 @@ class OracleWriter:
         """
         with self._pool.acquire() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, [
-                    run_id, log_group, start_time, end_time,
-                    chunks_ingested, status, error_message[:4000] if error_message else None,
-                ])
+                cur.execute(
+                    sql,
+                    [
+                        run_id,
+                        log_group,
+                        start_time,
+                        end_time,
+                        chunks_ingested,
+                        status,
+                        error_message[:4000] if error_message else None,
+                    ],
+                )
                 conn.commit()
 
     def close(self) -> None:
@@ -579,6 +609,7 @@ class OracleWriter:
 # ---------------------------------------------------------------------------
 # Hybrid Search (used by the RAG agent, included here for modularity)
 # ---------------------------------------------------------------------------
+
 
 class HybridSearcher:
     """
@@ -650,13 +681,13 @@ class HybridSearcher:
                 cur.execute(
                     self._HYBRID_SQL,
                     {
-                        "query_vec":          json.dumps(query_embedding),
-                        "start_ts":           start_ts,
-                        "end_ts":             end_ts,
-                        "log_level_filter":   log_level_filter,
-                        "service_filter":     service_filter,
-                        "source_type":        source_type,
-                        "top_k":              top_k,
+                        "query_vec": json.dumps(query_embedding),
+                        "start_ts": start_ts,
+                        "end_ts": end_ts,
+                        "log_level_filter": log_level_filter,
+                        "service_filter": service_filter,
+                        "source_type": source_type,
+                        "top_k": top_k,
                     },
                 )
                 cols = [d[0].lower() for d in cur.description]
@@ -683,6 +714,7 @@ class HybridSearcher:
 # ---------------------------------------------------------------------------
 # Orchestrator (main entry point)
 # ---------------------------------------------------------------------------
+
 
 class IngestionPipeline:
     """
@@ -771,7 +803,12 @@ class IngestionPipeline:
         except Exception as exc:
             logger.exception("Ingestion run failed", run_id=run_id)
             self._writer.record_run(
-                run_id, self._log_group, start_time, now, 0, "failed",
+                run_id,
+                self._log_group,
+                start_time,
+                now,
+                0,
+                "failed",
                 error_message=str(exc),
             )
             raise
@@ -787,11 +824,17 @@ class IngestionPipeline:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="RAG-Ops CloudWatch Ingestion Pipeline")
+    parser = argparse.ArgumentParser(
+        description="RAG-Ops CloudWatch Ingestion Pipeline"
+    )
     parser.add_argument("--log-group", required=True, help="CloudWatch log group name")
-    parser.add_argument("--service-name", required=True, help="Human-readable service name")
+    parser.add_argument(
+        "--service-name", required=True, help="Human-readable service name"
+    )
     parser.add_argument("--hours", type=int, default=6, help="Lookback window in hours")
-    parser.add_argument("--filter-pattern", default="", help="CloudWatch filter pattern")
+    parser.add_argument(
+        "--filter-pattern", default="", help="CloudWatch filter pattern"
+    )
     args = parser.parse_args()
 
     pipeline = IngestionPipeline(

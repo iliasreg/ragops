@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import oracledb
 from datasets import Dataset
@@ -33,7 +32,7 @@ from ragas.metrics import (
 )
 
 
-os.environ["OPENAI_API_KEY"]  = os.environ["OPENROUTER_API_KEY"]
+os.environ["OPENAI_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
 os.environ["OPENAI_API_BASE"] = "https://api.groq.com/openai/v1"
 
 # ---------------------------------------------------------------------------
@@ -45,6 +44,7 @@ FAITHFULNESS_ALERT_THRESHOLD = float(os.environ.get("FAITHFULNESS_THRESHOLD", "0
 # ---------------------------------------------------------------------------
 # Load evaluation samples from Oracle
 # ---------------------------------------------------------------------------
+
 
 def load_evaluation_samples(
     conn: oracledb.Connection,
@@ -78,18 +78,22 @@ def load_evaluation_samples(
         try:
             chunk_list = json.loads(chunks_json or "[]")
             # RAGAS expects contexts as a list of strings
-            contexts = [c.get("chunk_text", "") for c in chunk_list if c.get("chunk_text")]
+            contexts = [
+                c.get("chunk_text", "") for c in chunk_list if c.get("chunk_text")
+            ]
         except (json.JSONDecodeError, TypeError):
             contexts = []
 
-        samples.append({
-            "_query_id": query_id,          # internal; not passed to RAGAS
-            "question":  question,
-            "answer":    answer,
-            "contexts":  contexts,
-            # ground_truth is optional; supply it if you have golden answers
-            # "ground_truth": "...",
-        })
+        samples.append(
+            {
+                "_query_id": query_id,  # internal; not passed to RAGAS
+                "question": question,
+                "answer": answer,
+                "contexts": contexts,
+                # ground_truth is optional; supply it if you have golden answers
+                # "ground_truth": "...",
+            }
+        )
 
     logger.info(f"Loaded {len(samples)} unevaluated queries from Oracle")
     return samples
@@ -98,6 +102,7 @@ def load_evaluation_samples(
 # ---------------------------------------------------------------------------
 # Run RAGAS evaluation
 # ---------------------------------------------------------------------------
+
 
 def run_ragas_evaluation(samples: list[dict]) -> list[dict]:
     """
@@ -119,8 +124,7 @@ def run_ragas_evaluation(samples: list[dict]) -> list[dict]:
 
     # Strip internal keys before passing to RAGAS
     ragas_samples = [
-        {k: v for k, v in s.items() if not k.startswith("_")}
-        for s in samples
+        {k: v for k, v in s.items() if not k.startswith("_")} for s in samples
     ]
 
     dataset = Dataset.from_list(ragas_samples)
@@ -129,9 +133,9 @@ def run_ragas_evaluation(samples: list[dict]) -> list[dict]:
     results = evaluate(
         dataset=dataset,
         metrics=[
-            faithfulness,         # PRIMARY: are answer claims grounded in context?
-            answer_relevancy,     # Does the answer address the question?
-            context_precision,    # Are the retrieved chunks actually relevant?
+            faithfulness,  # PRIMARY: are answer claims grounded in context?
+            answer_relevancy,  # Does the answer address the question?
+            context_precision,  # Are the retrieved chunks actually relevant?
         ],
     )
 
@@ -141,15 +145,17 @@ def run_ragas_evaluation(samples: list[dict]) -> list[dict]:
     enriched = []
     for i, sample in enumerate(samples):
         row = scores_df.iloc[i]
-        sample["ragas_faithfulness"]      = float(row.get("faithfulness",      0.0))
-        sample["ragas_answer_relevancy"]  = float(row.get("answer_relevancy",  0.0))
+        sample["ragas_faithfulness"] = float(row.get("faithfulness", 0.0))
+        sample["ragas_answer_relevancy"] = float(row.get("answer_relevancy", 0.0))
         sample["ragas_context_precision"] = float(row.get("context_precision", 0.0))
         enriched.append(sample)
 
     logger.info(
         "RAGAS evaluation complete",
         mean_faithfulness=scores_df["faithfulness"].mean(),
-        mean_relevancy=scores_df.get("answer_relevancy", scores_df).mean() if "answer_relevancy" in scores_df else "N/A",
+        mean_relevancy=scores_df.get("answer_relevancy", scores_df).mean()
+        if "answer_relevancy" in scores_df
+        else "N/A",
     )
     return enriched
 
@@ -157,6 +163,7 @@ def run_ragas_evaluation(samples: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Write scores back to Oracle + alert on low faithfulness
 # ---------------------------------------------------------------------------
+
 
 def persist_scores(conn: oracledb.Connection, evaluated: list[dict]) -> None:
     """
@@ -184,12 +191,14 @@ def persist_scores(conn: oracledb.Connection, evaluated: list[dict]) -> None:
                 question=s["question"][:120],
                 threshold=FAITHFULNESS_ALERT_THRESHOLD,
             )
-        params.append({
-            "faith":     faith,
-            "relevancy": s["ragas_answer_relevancy"],
-            "precision": s["ragas_context_precision"],
-            "qid":       s["_query_id"],
-        })
+        params.append(
+            {
+                "faith": faith,
+                "relevancy": s["ragas_answer_relevancy"],
+                "precision": s["ragas_context_precision"],
+                "qid": s["_query_id"],
+            }
+        )
 
     with conn.cursor() as cur:
         cur.executemany(update_sql, params)
@@ -206,9 +215,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="RAG-Ops RAGAS Evaluation Job")
-    parser.add_argument("--lookback-hours",    type=int,   default=24)
-    parser.add_argument("--limit",             type=int,   default=100)
-    parser.add_argument("--min-faithfulness",  type=float, default=0.70)
+    parser.add_argument("--lookback-hours", type=int, default=24)
+    parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--min-faithfulness", type=float, default=0.70)
     args = parser.parse_args()
 
     FAITHFULNESS_ALERT_THRESHOLD = args.min_faithfulness
@@ -225,7 +234,9 @@ if __name__ == "__main__":
     )
 
     try:
-        samples   = load_evaluation_samples(conn, lookback_hours=args.lookback_hours, limit=args.limit)
+        samples = load_evaluation_samples(
+            conn, lookback_hours=args.lookback_hours, limit=args.limit
+        )
         evaluated = run_ragas_evaluation(samples)
         persist_scores(conn, evaluated)
     finally:

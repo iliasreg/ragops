@@ -26,6 +26,7 @@ langchain-openai>=0.1,<0.2        # swap for langchain-anthropic / langchain-bed
 # Evaluation
 ragas>=0.1.12,<0.2
 datasets>=2.20,<3
+pyarrow<16                          # datasets>=15 but langchain pins numpy<2 (pyarrow 16+ needs numpy 2)
 
 # Observability
 loguru>=0.7,<0.8
@@ -35,3 +36,5 @@ tenacity>=8.3,<9                  # retry with exponential backoff
 pytest>=8.2,<9
 pytest-asyncio>=0.23,<0.24
 httpx>=0.27,<0.28                 # async test client for FastAPI
+ruff>=0.9,<0.18                  # linter + formatter (pre-commit / CI)
+pre-commit>=4.0,<5               # repo hygiene hooks (pre-commit / CI)
