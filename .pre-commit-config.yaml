@@ -18,5 +18,5 @@ repos:
     rev: v0.17.0
     hooks:
       - id: ruff
-        args: [--fix]
+        args: [--fix, --ignore, "B008,BLE001"]
       - id: ruff-format

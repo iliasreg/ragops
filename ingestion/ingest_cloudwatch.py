@@ -21,9 +21,9 @@ import json
 import os
 import re
 import uuid
+from collections.abc import Generator
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Generator, Optional
+from datetime import UTC, datetime, timedelta
 
 import boto3
 import oracledb
@@ -98,7 +98,7 @@ class LogChunk:
     is_complete: int  # 1 = OK, 0 = agent flagged as incomplete
     completeness_note: str
     source_type: str = "cloudwatch_log"
-    embedding: Optional[list[float]] = None
+    embedding: list[float] | None = None
 
     @staticmethod
     def make_chunk_id(log_group: str, request_id: str, chunk_seq: int) -> str:
@@ -134,7 +134,7 @@ class CloudWatchFetcher:
         self,
         start_time: datetime,
         end_time: datetime,
-        log_stream_prefix: Optional[str] = None,
+        log_stream_prefix: str | None = None,
         filter_pattern: str = "",
     ) -> Generator[dict, None, None]:
         """
@@ -346,8 +346,7 @@ class LogChunker:
         """
         messages = [e["message"] for e in events]
         timestamps = [
-            datetime.fromtimestamp(e["timestamp"] / 1000, tz=timezone.utc)
-            for e in events
+            datetime.fromtimestamp(e["timestamp"] / 1000, tz=UTC) for e in events
         ]
         stream_names = [e.get("logStreamName", "") for e in events]
 
@@ -538,34 +537,33 @@ class OracleWriter:
         if not chunks:
             return 0, 0
 
-        with self._pool.acquire() as conn:
-            with conn.cursor() as cur:
-                for i in range(0, len(chunks), batch_size):
-                    batch = chunks[i : i + batch_size]
-                    params = [
-                        {
-                            "chunk_id": c.chunk_id,
-                            "log_group_name": c.log_group_name,
-                            "log_stream_name": c.log_stream_name,
-                            "log_timestamp": c.log_timestamp,
-                            "log_level": c.log_level,
-                            "service_name": c.service_name,
-                            "request_id": c.request_id,
-                            "trace_id": c.trace_id,
-                            "chunk_text": c.chunk_text,
-                            "chunk_seq": c.chunk_seq,
-                            "chunk_token_count": c.chunk_token_count,
-                            "is_complete": c.is_complete,
-                            "completeness_note": c.completeness_note,
-                            "source_type": c.source_type,
-                            # Oracle TO_VECTOR() accepts a JSON array string
-                            "embedding_json": json.dumps(c.embedding),
-                        }
-                        for c in batch
-                    ]
-                    cur.executemany(self._UPSERT_SQL, params)
-                    conn.commit()
-                    logger.debug(f"Upserted batch of {len(batch)} chunks")
+        with self._pool.acquire() as conn, conn.cursor() as cur:
+            for i in range(0, len(chunks), batch_size):
+                batch = chunks[i : i + batch_size]
+                params = [
+                    {
+                        "chunk_id": c.chunk_id,
+                        "log_group_name": c.log_group_name,
+                        "log_stream_name": c.log_stream_name,
+                        "log_timestamp": c.log_timestamp,
+                        "log_level": c.log_level,
+                        "service_name": c.service_name,
+                        "request_id": c.request_id,
+                        "trace_id": c.trace_id,
+                        "chunk_text": c.chunk_text,
+                        "chunk_seq": c.chunk_seq,
+                        "chunk_token_count": c.chunk_token_count,
+                        "is_complete": c.is_complete,
+                        "completeness_note": c.completeness_note,
+                        "source_type": c.source_type,
+                        # Oracle TO_VECTOR() accepts a JSON array string
+                        "embedding_json": json.dumps(c.embedding),
+                    }
+                    for c in batch
+                ]
+                cur.executemany(self._UPSERT_SQL, params)
+                conn.commit()
+                logger.debug(f"Upserted batch of {len(batch)} chunks")
 
         return len(chunks), 0
 
@@ -586,21 +584,20 @@ class OracleWriter:
                  chunks_ingested, status, error_message)
             VALUES (:1, :2, :3, :4, :5, :6, :7)
         """
-        with self._pool.acquire() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    sql,
-                    [
-                        run_id,
-                        log_group,
-                        start_time,
-                        end_time,
-                        chunks_ingested,
-                        status,
-                        error_message[:4000] if error_message else None,
-                    ],
-                )
-                conn.commit()
+        with self._pool.acquire() as conn, conn.cursor() as cur:
+            cur.execute(
+                sql,
+                [
+                    run_id,
+                    log_group,
+                    start_time,
+                    end_time,
+                    chunks_ingested,
+                    status,
+                    error_message[:4000] if error_message else None,
+                ],
+            )
+            conn.commit()
 
     def close(self) -> None:
         self._pool.close()
@@ -651,9 +648,9 @@ class HybridSearcher:
         query: str,
         start_ts: datetime,
         end_ts: datetime,
-        log_level_filter: Optional[str] = None,
-        service_filter: Optional[str] = None,
-        source_type: Optional[str] = None,
+        log_level_filter: str | None = None,
+        service_filter: str | None = None,
+        source_type: str | None = None,
         top_k: int = 8,
     ) -> list[dict]:
         """
@@ -676,22 +673,21 @@ class HybridSearcher:
             [query], normalize_embeddings=True
         )[0].tolist()
 
-        with self._pool.acquire() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    self._HYBRID_SQL,
-                    {
-                        "query_vec": json.dumps(query_embedding),
-                        "start_ts": start_ts,
-                        "end_ts": end_ts,
-                        "log_level_filter": log_level_filter,
-                        "service_filter": service_filter,
-                        "source_type": source_type,
-                        "top_k": top_k,
-                    },
-                )
-                cols = [d[0].lower() for d in cur.description]
-                rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        with self._pool.acquire() as conn, conn.cursor() as cur:
+            cur.execute(
+                self._HYBRID_SQL,
+                {
+                    "query_vec": json.dumps(query_embedding),
+                    "start_ts": start_ts,
+                    "end_ts": end_ts,
+                    "log_level_filter": log_level_filter,
+                    "service_filter": service_filter,
+                    "source_type": source_type,
+                    "top_k": top_k,
+                },
+            )
+            cols = [d[0].lower() for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
 
         # Flag incomplete chunks for the agent to handle
         for row in rows:
@@ -746,7 +742,7 @@ class IngestionPipeline:
             Summary dict suitable for FastAPI response or CLI output.
         """
         run_id = str(uuid.uuid4())
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         start_time = now - timedelta(hours=lookback_hours)
 
         logger.info(

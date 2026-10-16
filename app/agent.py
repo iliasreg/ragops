@@ -16,22 +16,21 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 import os
-from datetime import datetime, timedelta, timezone
-from typing import AsyncGenerator, Optional
+import time
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 
 import oracledb
 from langchain.callbacks.streaming_aiter import AsyncIteratorCallbackHandler
-from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
 from app.schemas import MetricsResponse, QuerySummary, RagasScores, SourceChunk
 from ingestion.ingest_cloudwatch import IngestionPipeline
-
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -137,8 +136,8 @@ class RagOpsAgent:
         question: str,
         start_ts: datetime,
         end_ts: datetime,
-        log_level_filter: Optional[str] = None,
-        service_filter: Optional[str] = None,
+        log_level_filter: str | None = None,
+        service_filter: str | None = None,
         top_k: int = 8,
     ) -> AsyncGenerator[dict, None]:
         """
@@ -307,7 +306,7 @@ class RagOpsAgent:
     # Public: query history + metrics
     # ------------------------------------------------------------------
 
-    async def get_query(self, query_id: str) -> Optional[QuerySummary]:
+    async def get_query(self, query_id: str) -> QuerySummary | None:
         sql = """
             SELECT query_id, query_text, generated_answer, retrieved_chunks,
                    ragas_faithfulness, ragas_answer_relevancy, ragas_context_precision,
@@ -315,10 +314,9 @@ class RagOpsAgent:
                    created_at, latency_ms
             FROM query_history WHERE query_id = :qid
         """
-        async with self._pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(sql, {"qid": query_id})
-                row = await cur.fetchone()
+        async with self._pool.acquire() as conn, conn.cursor() as cur:
+            await cur.execute(sql, {"qid": query_id})
+            row = await cur.fetchone()
 
         if not row:
             return None
@@ -368,11 +366,10 @@ class RagOpsAgent:
             FROM query_history
             WHERE created_at >= :cutoff
         """
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=24)
-        async with self._pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(sql, {"cutoff": cutoff})
-                row = await cur.fetchone()
+        cutoff = datetime.now(tz=UTC) - timedelta(hours=24)
+        async with self._pool.acquire() as conn, conn.cursor() as cur:
+            await cur.execute(sql, {"cutoff": cutoff})
+            row = await cur.fetchone()
 
         total, faith, rel, low, inc, corr = row or (0, None, None, 0, 0, 0)
         return MetricsResponse(
@@ -396,8 +393,8 @@ class RagOpsAgent:
         query_vec: list[float],
         start_ts: datetime,
         end_ts: datetime,
-        log_level_filter: Optional[str],
-        service_filter: Optional[str],
+        log_level_filter: str | None,
+        service_filter: str | None,
         top_k: int,
     ) -> list[dict]:
         return await self._run_search(
@@ -430,11 +427,10 @@ class RagOpsAgent:
         )
 
     async def _run_search(self, sql: str, params: dict) -> list[dict]:
-        async with self._pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(sql, params)
-                cols = [d[0].lower() for d in cur.description]
-                rows = await cur.fetchall()
+        async with self._pool.acquire() as conn, conn.cursor() as cur:
+            await cur.execute(sql, params)
+            cols = [d[0].lower() for d in cur.description]
+            rows = await cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
 
     @staticmethod
@@ -476,22 +472,21 @@ class RagOpsAgent:
                 :latency, SYSTIMESTAMP
             )
         """
-        async with self._pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    sql,
-                    {
-                        "qid": query_id,
-                        "question": question,
-                        "answer": answer,
-                        "chunks": chunks_json,
-                        "incomplete": int(had_incomplete),
-                        "correction": int(self_correction_applied),
-                        "note": self_correction_note or None,
-                        "latency": latency_ms,
-                    },
-                )
-                await conn.commit()
+        async with self._pool.acquire() as conn, conn.cursor() as cur:
+            await cur.execute(
+                sql,
+                {
+                    "qid": query_id,
+                    "question": question,
+                    "answer": answer,
+                    "chunks": chunks_json,
+                    "incomplete": int(had_incomplete),
+                    "correction": int(self_correction_applied),
+                    "note": self_correction_note or None,
+                    "latency": latency_ms,
+                },
+            )
+            await conn.commit()
 
     async def _evaluate_and_update(
         self,
@@ -559,18 +554,17 @@ class RagOpsAgent:
                     evaluation_at           = SYSTIMESTAMP
                 WHERE query_id = :qid
             """
-            async with self._pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        update_sql,
-                        {
-                            "faith": faith,
-                            "rel": rel,
-                            "prec": prec,
-                            "qid": query_id,
-                        },
-                    )
-                    await conn.commit()
+            async with self._pool.acquire() as conn, conn.cursor() as cur:
+                await cur.execute(
+                    update_sql,
+                    {
+                        "faith": faith,
+                        "rel": rel,
+                        "prec": prec,
+                        "qid": query_id,
+                    },
+                )
+                await conn.commit()
 
             logger.info(
                 "RAGAS evaluation complete",

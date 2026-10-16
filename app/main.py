@@ -16,9 +16,9 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import AsyncGenerator
+from datetime import UTC, datetime
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,11 +30,10 @@ from app.dependencies import get_agent, lifespan_state
 from app.schemas import (
     IngestRequest,
     IngestResponse,
+    MetricsResponse,
     QueryRequest,
     QuerySummary,
-    MetricsResponse,
 )
-
 
 # ---------------------------------------------------------------------------
 # App lifespan — initialise shared resources once at startup
@@ -73,7 +72,7 @@ app.add_middleware(
 
 @app.get("/health", tags=["ops"])
 async def health() -> dict:
-    return {"status": "ok", "timestamp": datetime.now(tz=timezone.utc).isoformat()}
+    return {"status": "ok", "timestamp": datetime.now(tz=UTC).isoformat()}
 
 
 @app.post("/ingest", response_model=IngestResponse, tags=["ingestion"])
